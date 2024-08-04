@@ -33,7 +33,8 @@
       "jlink",
       "cmsis-dap",
       "stlink",
-      "blackmagic"
+      "blackmagic",
+      "dfu"
     ]
   },
   "url": "https://www.st.com/en/microcontrollers-microprocessors/stm32f042f6.html",
