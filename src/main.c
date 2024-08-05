@@ -36,14 +36,16 @@ along with this program.If not, see < https://www.gnu.org/licenses/>.
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define BOOTLOADER_ADDRESS 0x1FFFC400 // address of the bootloader ROM
-#define LDC_HONE_DEADBAND 20 // the magnitude of all channel readings should be less than this before LDC honing begins
-#define LDC_HONE_PERIOD 100 // this many samples should pass within LDC_HONE_DEADBAND before LDC honing executes
-#define X_SCALE_FACTOR 120 // Scaling factors to bring the values up to us the full range of int16_t so other programs play nice
-#define Y_SCALE_FACTOR 120
-#define Z_SCALE_FACTOR 35
-#define RX_SCALE_FACTOR 30
-#define RY_SCALE_FACTOR 30
-#define RZ_SCALE_FACTOR 50
+#define LDC_HONE_DEADBAND 100 // the magnitude of all channel readings should be less than this before LDC honing begins
+#define LDC_HONE_PERIOD 500 // this many samples should pass within LDC_HONE_DEADBAND before LDC honing executes
+
+#define X_SCALE_FACTOR 1 // Scaling factors to bring the values up to us the full range of int16_t so other programs play nice
+#define Y_SCALE_FACTOR 1
+#define Z_SCALE_FACTOR 1
+
+#define RX_SCALE_FACTOR 1
+#define RY_SCALE_FACTOR 1
+#define RZ_SCALE_FACTOR 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -65,10 +67,20 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 extern USBD_HandleTypeDef hUsbDeviceFS;
 
+
 static inline void sendGamepadReport(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz)
 {
-  int16_t buffer[6] = {x, y, z, rx, ry, rz};
-  USBD_HID_SendReport(&hUsbDeviceFS, buffer, sizeof(buffer));
+ // int16_t buffer[6] = {x, y, z, rx, ry, rz};
+  uint8_t buffer_trans[7] = {0x01, LOBYTE(x), HIBYTE(x), LOBYTE(y), HIBYTE(y), LOBYTE(z), HIBYTE(z)};
+  uint8_t buffer_rot[7] = {0x02, LOBYTE(rx), HIBYTE(rx), LOBYTE(ry), HIBYTE(ry), LOBYTE(rz), HIBYTE(rz)};
+
+  //uint8_t buffer_full[14] = {0x01, LOBYTE(x), HIBYTE(x), LOBYTE(y), HIBYTE(y), LOBYTE(z), HIBYTE(z), 0x02, LOBYTE(rx), HIBYTE(rx), LOBYTE(ry), HIBYTE(ry), LOBYTE(rz), HIBYTE(rz)};
+  //USBD_HID_SendReport(&hUsbDeviceFS, buffer_trans, sizeof(buffer_trans));
+  //USBD_HID_SendReport(&hUsbDeviceFS, buffer_rot, sizeof(buffer_rot));
+  //USBD_HID_SendReport(&hUsbDeviceFS, &buffer_trans, sizeof(buffer_trans));
+  USBD_HID_SendReport(&hUsbDeviceFS, &buffer_trans, sizeof(buffer_trans));
+  HAL_Delay(2);
+  USBD_HID_SendReport(&hUsbDeviceFS, &buffer_rot, sizeof(buffer_rot));
 }
 
 int16_t boundToInt16(int32_t value) {
