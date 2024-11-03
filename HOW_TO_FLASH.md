@@ -21,9 +21,9 @@ In the top right, there is a dropdown menu, and in my image you can see "USB" is
 ![connected_stm32cubeprogrammer](./Images/connected_stm32cubeprogrammer.PNG)
 
 | USB Issues / "Read Unprotect" |
-||
-| If you get an error message about "Read Unprotect", ***don't*** do as it says - Especially if you have previously programmed the chip!\* This is a known USB issue and shall (currently) be solved by connecting a USB hub (may need to be < 3.0) between the PC and the board. You may also need to switch to a slower USB port on the PC.
-\* *Note that if you change the "Read unprotect" setting after programming the application, it will also erase the BOOT_SEL setting you made (see below) and you can no longer get the board into the bootloader. The only (?) solution to this is to lift leg 1 of the STM32, which should make it stay in the bootloader (you may need to try booting a few times or even connect the pin to 3.3V), set the BOOT_SEL option again and then re-solder leg 1.* |
+| - |
+| If you get an error message about "Read Unprotect", ***don't*** do as it says - Especially if you have previously programmed the chip!\* This is a known USB-related issue and shall (currently) be solved by connecting a USB hub (may need to be version < 3.0) between the PC and the board. You may also need to switch to a slower USB port on the PC. |
+|\* *Note that if you change the "Read unprotect" setting after programming the application, it will also erase the BOOT_SEL setting you made (see below) and you can no longer get the board into the bootloader. The only (?) solution to this is to lift leg 1 of the STM32, which should make it stay in the bootloader (you may need to try booting a few times or even connect the pin to 3.3V), set the BOOT_SEL option again and then re-solder leg 1.* |
 
 
 
