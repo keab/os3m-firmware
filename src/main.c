@@ -39,13 +39,13 @@ along with this program.If not, see < https://www.gnu.org/licenses/>.
 #define LDC_HONE_DEADBAND 100 // the magnitude of all channel readings should be less than this before LDC honing begins
 #define LDC_HONE_PERIOD 500 // this many samples should pass within LDC_HONE_DEADBAND before LDC honing executes
 
-#define X_SCALE_FACTOR 1 // Scaling factors to bring the values up to us the full range of int16_t so other programs play nice
-#define Y_SCALE_FACTOR 1
-#define Z_SCALE_FACTOR 1
+#define X_SCALE_FACTOR -1.68 // Scaling set to give good results with the "custom target" and 3Dconnexion's default settings
+#define Y_SCALE_FACTOR 1.68
+#define Z_SCALE_FACTOR -0.2
 
-#define RX_SCALE_FACTOR 1
-#define RY_SCALE_FACTOR 1
-#define RZ_SCALE_FACTOR 1
+#define RX_SCALE_FACTOR 0.12
+#define RY_SCALE_FACTOR -0.26
+#define RZ_SCALE_FACTOR -1.68
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
