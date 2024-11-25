@@ -36,16 +36,21 @@ along with this program.If not, see < https://www.gnu.org/licenses/>.
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define BOOTLOADER_ADDRESS 0x1FFFC400 // address of the bootloader ROM
-#define LDC_HONE_DEADBAND 100 // the magnitude of all channel readings should be less than this before LDC honing begins
-#define LDC_HONE_PERIOD 500 // this many samples should pass within LDC_HONE_DEADBAND before LDC honing executes
+#define LDC_HONE_DEADBAND 30 // the magnitude of all channel readings should be less than this before LDC honing begins
+#define LDC_HONE_PERIOD 20 // this many samples should pass within LDC_HONE_DEADBAND before LDC honing executes
 
 #define X_SCALE_FACTOR -1.68 // Scaling set to give good results with the "custom target" and 3Dconnexion's default settings
 #define Y_SCALE_FACTOR 1.68
 #define Z_SCALE_FACTOR -0.2
 
-#define RX_SCALE_FACTOR 0.12
-#define RY_SCALE_FACTOR -0.26
+#define RX_SCALE_FACTOR 1
+#define RY_SCALE_FACTOR -1
 #define RZ_SCALE_FACTOR -1.68
+
+#define COMMON_DIVIDER 125
+
+#define AUTOZERO_MAX_TOTAL_CHANGE 20 //If the summed changes from one loop to the next is less than this value, honing counter will be increased
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -246,9 +251,18 @@ int main(void)
   readChannel(0x2a, 1, &ldc1_ch1_cal);
   readChannel(0x2a, 2, &ldc1_ch2_cal);
   readChannel(0x2a, 3, &ldc1_ch3_cal);
-
   readChannel(0x2b, 0, &ldc2_ch0_cal);
   readChannel(0x2b, 1, &ldc2_ch1_cal);
+  ldc1_ch0_cal /= COMMON_DIVIDER;
+  ldc1_ch1_cal /= COMMON_DIVIDER;
+  ldc1_ch2_cal /= COMMON_DIVIDER;
+  ldc1_ch3_cal /= COMMON_DIVIDER;
+  ldc2_ch0_cal /= COMMON_DIVIDER;
+  ldc2_ch1_cal /= COMMON_DIVIDER;
+
+// Autozero variables
+  uint8_t probably_home = 0;
+  uint32_t total_change = 0;
 
   /* USER CODE END 2 */
 
@@ -265,17 +279,34 @@ int main(void)
     readChannel(0x2a, 1, &ldc1_ch1);
     readChannel(0x2a, 2, &ldc1_ch2);
     readChannel(0x2a, 3, &ldc1_ch3);
-
     readChannel(0x2b, 0, &ldc2_ch0);
     readChannel(0x2b, 1, &ldc2_ch1);
 
+    ldc1_ch0 /= COMMON_DIVIDER;
+    ldc1_ch1 /= COMMON_DIVIDER;
+    ldc1_ch2 /= COMMON_DIVIDER;
+    ldc1_ch3 /= COMMON_DIVIDER;
+    ldc2_ch0 /= COMMON_DIVIDER;
+    ldc2_ch1 /= COMMON_DIVIDER;
+
+    //For Autozero, compute total change from last samples
+    total_change = abs(ldc1_ch0 + ldc1_ch0_dif - ldc1_ch0_cal) +
+                  abs(ldc1_ch1 + ldc1_ch1_dif - ldc1_ch1_cal) +
+                  abs(ldc1_ch2 + ldc1_ch2_dif - ldc1_ch2_cal) +
+                  abs(ldc1_ch3 + ldc1_ch3_dif - ldc1_ch3_cal) +
+                  abs(ldc2_ch0 + ldc2_ch0_dif - ldc2_ch0_cal) +
+                  abs(ldc2_ch1 + ldc2_ch1_dif - ldc2_ch1_cal);
+
     // Compare to cal'd values
-    ldc1_ch0_dif = ((int32_t)ldc1_ch0_cal - (int32_t)ldc1_ch0) / 125;
-    ldc1_ch1_dif = ((int32_t)ldc1_ch1_cal - (int32_t)ldc1_ch1) / 125;
-    ldc1_ch2_dif = ((int32_t)ldc1_ch2_cal - (int32_t)ldc1_ch2) / 125;
-    ldc1_ch3_dif = ((int32_t)ldc1_ch3_cal - (int32_t)ldc1_ch3) / 125;
-    ldc2_ch0_dif = ((int32_t)ldc2_ch0_cal - (int32_t)ldc2_ch0) / 125;
-    ldc2_ch1_dif = ((int32_t)ldc2_ch1_cal - (int32_t)ldc2_ch1) / 125;
+    ldc1_ch0_dif = ((int32_t)ldc1_ch0_cal - (int32_t)ldc1_ch0);
+    ldc1_ch1_dif = ((int32_t)ldc1_ch1_cal - (int32_t)ldc1_ch1);
+    ldc1_ch2_dif = ((int32_t)ldc1_ch2_cal - (int32_t)ldc1_ch2);
+    ldc1_ch3_dif = ((int32_t)ldc1_ch3_cal - (int32_t)ldc1_ch3);
+    ldc2_ch0_dif = ((int32_t)ldc2_ch0_cal - (int32_t)ldc2_ch0);
+    ldc2_ch1_dif = ((int32_t)ldc2_ch1_cal - (int32_t)ldc2_ch1);
+
+   //For Autozero, judge whether the knob has been left in home position
+    probably_home = total_change < AUTOZERO_MAX_TOTAL_CHANGE;
 
     // Perform honing (if necessary)
     switch (ldc_honing_state){
@@ -286,22 +317,26 @@ int main(void)
           abs(ldc1_ch2_dif) > LDC_HONE_DEADBAND ||
           abs(ldc1_ch3_dif) > LDC_HONE_DEADBAND ||
           abs(ldc2_ch0_dif) > LDC_HONE_DEADBAND ||
-          abs(ldc2_ch1_dif) > LDC_HONE_DEADBAND
+          abs(ldc2_ch1_dif) > LDC_HONE_DEADBAND ||
+          !probably_home
         ){
           ldc_honing_state = ACTIVE;
         }
         break;
       case ACTIVE:
         if(
-          abs(ldc1_ch0_dif) < LDC_HONE_DEADBAND &&
-          abs(ldc1_ch1_dif) < LDC_HONE_DEADBAND &&
-          abs(ldc1_ch2_dif) < LDC_HONE_DEADBAND &&
-          abs(ldc1_ch3_dif) < LDC_HONE_DEADBAND &&
-          abs(ldc2_ch0_dif) < LDC_HONE_DEADBAND &&
-          abs(ldc2_ch1_dif) < LDC_HONE_DEADBAND
+            abs(ldc1_ch0_dif) < LDC_HONE_DEADBAND &&
+            abs(ldc1_ch1_dif) < LDC_HONE_DEADBAND &&
+            abs(ldc1_ch2_dif) < LDC_HONE_DEADBAND &&
+            abs(ldc1_ch3_dif) < LDC_HONE_DEADBAND &&
+            abs(ldc2_ch0_dif) < LDC_HONE_DEADBAND &&
+            abs(ldc2_ch1_dif) < LDC_HONE_DEADBAND  
         ){
           ldc_honing_count++;
           in_deadband = 1;
+        } else if(probably_home) {
+          ldc_honing_count++;
+          in_deadband = 0;
         }else{
           ldc_honing_count = 0;
           in_deadband = 0;
@@ -313,8 +348,17 @@ int main(void)
           ldc1_ch3_cal = ldc1_ch3;
           ldc2_ch0_cal = ldc2_ch0;
           ldc2_ch1_cal = ldc2_ch1;
+
           ldc_honing_count = 0;
           ldc_honing_state = HONED;
+
+          //For Autozero, set the diffs to zero to be correct next loop
+          ldc1_ch0_dif = 0;
+          ldc1_ch1_dif = 0;
+          ldc1_ch2_dif = 0;
+          ldc1_ch3_dif = 0;
+          ldc2_ch0_dif = 0;
+          ldc2_ch1_dif = 0;
         }
       default:
         break;
