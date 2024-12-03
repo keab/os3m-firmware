@@ -37,6 +37,7 @@ extern "C" {
 /* USER CODE END Private defines */
 
 void MX_GPIO_Init(void);
+void MX_GPIO_Init_Tp_Button(uint16_t GPIO_A_ButtonId);
 
 /* USER CODE BEGIN Prototypes */
 

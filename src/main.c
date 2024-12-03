@@ -31,25 +31,87 @@ along with this program.If not, see < https://www.gnu.org/licenses/>.
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+//Set the size of the averaging window. Set to 1 if you want no averaging at all
+#define WIN_SIZE 5
+
+typedef struct Sensor_st {
+  uint8_t LDCAdr;
+  uint8_t channel;
+  uint32_t cal;
+  uint32_t val;
+  int32_t diff;
+  uint32_t vals[WIN_SIZE];
+} Sensor_st;
+
+typedef enum {
+  HONED = 0,
+  ACTIVE = 1, 
+} honing_state_t;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define BOOTLOADER_ADDRESS 0x1FFFC400 // address of the bootloader ROM
-#define LDC_HONE_DEADBAND 30 // the magnitude of all channel readings should be less than this before LDC honing begins
-#define LDC_HONE_PERIOD 20 // this many samples should pass within LDC_HONE_DEADBAND before LDC honing executes
 
-#define X_SCALE_FACTOR -1.68 // Scaling set to give good results with the "custom target" and 3Dconnexion's default settings
+
+#define LDC_HONE_DEADBAND 30 // the magnitude of all channel readings should be less than this before LDC honing begins (honing counter is increased)
+#define LDC_HONE_PERIOD 40 // this many samples should pass within LDC_HONE_DEADBAND before LDC honing (and Autozero) executes
+//Autozeroing parameter
+//If the summed changes from one sampling-loop to the next is less than this value, honing counter will be increased, eventually leading to zeroing. 
+//If you experience that the zeroing is done when you don't want to, try reducing this value
+//Note that the stiffer your flexure part is, the lower this number must be, and vice versa. Also, the larger WIN_SIZE, the smaller this parameter needs to be.
+//Set it to 0 to disable Autozero
+#define AUTOZERO_MAX_TOTAL_CHANGE 10 
+
+// Scaling factors are set to give good results with the "custom target" and Spacemouse's default driver settings
+#define X_SCALE_FACTOR -1.68 
 #define Y_SCALE_FACTOR 1.68
 #define Z_SCALE_FACTOR -0.2
-
 #define RX_SCALE_FACTOR 1
 #define RY_SCALE_FACTOR -1
 #define RZ_SCALE_FACTOR -1.68
 
-#define COMMON_DIVIDER 125
+//This parameter is used to scale the sensor data uniformly. 
+//If you want to increase or decrease the overall gain, you can do it here.
+#define COMMON_DENOM 125
 
-#define AUTOZERO_MAX_TOTAL_CHANGE 20 //If the summed changes from one loop to the next is less than this value, honing counter will be increased
+
+//Constants to index the different sensors. Not to be changed.
+#define NUM_SENSORS 6
+#define LDC1CH0_id 0
+#define LDC1CH1_id 1
+#define LDC1CH2_id 2
+#define LDC1CH3_id 3
+#define LDC2CH0_id 4
+#define LDC2CH1_id 5
+
+//Bit in USB report 0x03 corresponding to the respective spacemouse-button. Not to be changed.
+#define BUTTON_1_BIT 12
+#define BUTTON_2_BIT 13
+#define BUTTON_3_BIT 14
+#define BUTTON_4_BIT 15
+#define BUTTON_ESC_BIT 22
+#define BUTTON_CTRL_BIT 25
+#define BUTTON_ALT_BIT 23
+#define BUTTON_SHIFT_BIT 24
+#define BUTTON_MENU_BIT 0
+#define BUTTON_VIEW_FIT_BIT 1
+#define BUTTON_VIEW_FRONT_BIT 5
+#define BUTTON_VIEW_RIGHT_BIT 4
+#define BUTTON_VIEW_TOP_BIT 2
+#define BUTTON_VIEW_ROLLL90_BIT 8
+#define BUTTON_ROT_TOGGLE_BIT 26
+
+//Here select/define which function each os3m button (each connected to a TP) should have.
+//Comment out the lines you don't use (i.e. if no button is connected or you use the TP for something else)
+//Note that buttons can also be assigned other functions in the PC driver
+//All buttons are active low, i.e. the switch shall be between TP and GND.
+#define TP1_BIT BUTTON_VIEW_FIT_BIT
+#define TP2_BIT BUTTON_VIEW_FRONT_BIT
+#define TP3_BIT BUTTON_ROT_TOGGLE_BIT
+#define TP4_BIT BUTTON_CTRL_BIT
+
 
 /* USER CODE END PD */
 
@@ -61,31 +123,97 @@ along with this program.If not, see < https://www.gnu.org/licenses/>.
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-typedef enum {
-  HONED = 0,
-  ACTIVE = 1, 
-} honing_state_t;
+extern USBD_HandleTypeDef hUsbDeviceFS;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
+
 /* USER CODE BEGIN PFP */
-extern USBD_HandleTypeDef hUsbDeviceFS;
+void SystemClock_Config(void);
 
 
-static inline void sendGamepadReport(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz)
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+void sendGamepadReport(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz)
 {
  // int16_t buffer[6] = {x, y, z, rx, ry, rz};
   uint8_t buffer_trans[7] = {0x01, LOBYTE(x), HIBYTE(x), LOBYTE(y), HIBYTE(y), LOBYTE(z), HIBYTE(z)};
   uint8_t buffer_rot[7] = {0x02, LOBYTE(rx), HIBYTE(rx), LOBYTE(ry), HIBYTE(ry), LOBYTE(rz), HIBYTE(rz)};
 
   //uint8_t buffer_full[14] = {0x01, LOBYTE(x), HIBYTE(x), LOBYTE(y), HIBYTE(y), LOBYTE(z), HIBYTE(z), 0x02, LOBYTE(rx), HIBYTE(rx), LOBYTE(ry), HIBYTE(ry), LOBYTE(rz), HIBYTE(rz)};
-  //USBD_HID_SendReport(&hUsbDeviceFS, buffer_trans, sizeof(buffer_trans));
-  //USBD_HID_SendReport(&hUsbDeviceFS, buffer_rot, sizeof(buffer_rot));
-  //USBD_HID_SendReport(&hUsbDeviceFS, &buffer_trans, sizeof(buffer_trans));
+
   USBD_HID_SendReport(&hUsbDeviceFS, &buffer_trans, sizeof(buffer_trans));
   HAL_Delay(2);
   USBD_HID_SendReport(&hUsbDeviceFS, &buffer_rot, sizeof(buffer_rot));
+}
+
+
+/*
+Send a button report.
+
+For some currently unknown reason, if the knob is moved at the same time as a button is pressed, 
+the two highest bytes transmitted (buffer_but[5] and buffer_but[6]) will contain non-zero values.
+No effects of this on the pc side have been noticed so far.
+This was *not* observed when tracing a Spacemouse Pro.
+
+*/
+void sendGamepadReportTpButtons(void)
+{
+  static uint8_t last_sent = 0;
+  uint8_t new_val = 0;
+  uint8_t buffer_but[7] = {0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  //memset(buffer_but + 1, 0, 6*sizeof(uint8_t));
+
+  #ifdef TP1_BIT
+    const uint8_t TP1_By = 1 + (TP1_BIT / 8);
+    const uint8_t TP1_bi = TP1_BIT % 8;
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4) == GPIO_PIN_RESET)
+    {
+      buffer_but[TP1_By] |= 1 << TP1_bi;
+      new_val |= 1;
+    }
+  #endif
+  #ifdef TP2_BIT
+    const uint8_t TP2_By = 1 + (TP2_BIT / 8);
+    const uint8_t TP2_bi = TP2_BIT % 8;
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET)
+    {
+      buffer_but[TP2_By] |= 1 << TP2_bi;
+      new_val |= 2;
+    }
+  #endif
+  #ifdef TP3_BIT
+    const uint8_t TP3_By = 1 + (TP3_BIT / 8);
+    const uint8_t TP3_bi = TP3_BIT % 8;
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_RESET)
+    {
+      buffer_but[TP3_By] |= 1 << TP3_bi;
+      new_val |= 4;
+    }
+  #endif
+  #ifdef TP4_BIT
+    const uint8_t TP4_By = 1 + (TP4_BIT / 8);
+    const uint8_t TP4_bi = TP4_BIT % 8;
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_RESET)
+    {
+      buffer_but[TP4_By] |= 1 << TP4_bi;
+      new_val |= 8;
+    }
+  #endif
+
+
+  if (new_val != last_sent)
+  {
+    HAL_Delay(10); //For some reason this delay is needed to always get the packet sent. 5ms was not enough.
+    
+    USBD_HID_SendReport(&hUsbDeviceFS, &buffer_but, sizeof(buffer_but));
+
+    last_sent = new_val;
+  }
 }
 
 int16_t boundToInt16(int32_t value) {
@@ -109,7 +237,7 @@ void jumpToBootloader(void) {
 
   //De-init all peripherals
   HAL_I2C_DeInit(&hi2c1);
-  HAL_GPIO_DeInit(GPIOA, GPIO_PIN_2 | GPIO_PIN_3);
+  HAL_GPIO_DeInit(GPIOA, GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7 );
 
   // Disable Systick
   SysTick->CTRL = 0;
@@ -135,10 +263,6 @@ void jumpToBootloader(void) {
   while (1); // Just in case...
 }
 
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
  LDC_configReg default_config[] = {
   { LDC16xx_CLOCK_DIVIDERS_CH0,   0x5002 }, // get weird behavior with other dividers like 1002, just stick with this for now
   { LDC16xx_CLOCK_DIVIDERS_CH1,   0x5002 },
@@ -202,6 +326,20 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+
+  #ifdef TP1_BIT
+  MX_GPIO_Init_Tp_Button(GPIO_PIN_4);
+  #endif
+  #ifdef TP2_BIT
+  MX_GPIO_Init_Tp_Button(GPIO_PIN_5);
+  #endif
+  #ifdef TP3_BIT
+  MX_GPIO_Init_Tp_Button(GPIO_PIN_6);
+  #endif
+  #ifdef TP4_BIT
+  MX_GPIO_Init_Tp_Button(GPIO_PIN_7);
+  #endif
+  
   MX_I2C1_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
@@ -221,44 +359,49 @@ int main(void)
   // Send the new config to the LDC1612
   loadConfig(0x2b, default_config, LDC_CONFIG_SIZE);
 
-  // Channel data and cal data variables
-  uint32_t ldc1_ch0 = 0;
-  uint32_t ldc1_ch1 = 0;
-  uint32_t ldc1_ch2 = 0;
-  uint32_t ldc1_ch3 = 0;
-  uint32_t ldc2_ch0 = 0;
-  uint32_t ldc2_ch1 = 0;
-  int32_t ldc1_ch0_dif = 0;
-  int32_t ldc1_ch1_dif = 0;
-  int32_t ldc1_ch2_dif = 0;
-  int32_t ldc1_ch3_dif = 0;
-  int32_t ldc2_ch0_dif = 0;
-  int32_t ldc2_ch1_dif = 0;
-  uint32_t ldc1_ch0_cal = 0;
-  uint32_t ldc1_ch1_cal = 0;
-  uint32_t ldc1_ch2_cal = 0;
-  uint32_t ldc1_ch3_cal = 0;
-  uint32_t ldc2_ch0_cal = 0;
-  uint32_t ldc2_ch1_cal = 0;
+
+  Sensor_st* sensors[NUM_SENSORS];
+  uint8_t i,j,w_cnt=0;
+  uint32_t tmp;
+  const uint32_t denom = COMMON_DENOM * WIN_SIZE;
+
+  //Initialise all sensor structs
+  for(i = 0; i < NUM_SENSORS; i++) {
+    sensors[i] = (Sensor_st*)malloc(sizeof(Sensor_st));
+    sensors[i]->LDCAdr = 0x2a; //Note: Some will be changed to 0x2b below
+    sensors[i]->val = 0;
+    sensors[i]->diff = 0;
+    sensors[i]->cal =  0;
+  }
+  sensors[LDC2CH0_id]->LDCAdr = 0x2b;
+  sensors[LDC2CH1_id]->LDCAdr = 0x2b;
+  sensors[LDC1CH0_id]->channel = 0;
+  sensors[LDC1CH1_id]->channel = 1;
+  sensors[LDC1CH2_id]->channel = 2;
+  sensors[LDC1CH3_id]->channel = 3;
+  sensors[LDC2CH0_id]->channel = 0;
+  sensors[LDC2CH1_id]->channel = 1;
+  
+  //Fill the averaging window(s) with samples and calculate the current value(s)
+  for(j = 0; j < WIN_SIZE; j++) {
+    for(i = 0; i < NUM_SENSORS; i++) {
+      readChannel(sensors[i]->LDCAdr, sensors[i]->channel, &tmp);
+      sensors[i]->vals[j] = tmp / denom;
+      sensors[i]->val += sensors[i]->vals[j];
+    }
+    HAL_Delay(20);
+  }
+  //Set the zero position
+  for(i = 0; i < NUM_SENSORS; i++) {
+    sensors[i]->cal = sensors[i]->val;
+  }
+
+
 
   // Honing counter
   uint32_t ldc_honing_count = 0;
   honing_state_t ldc_honing_state = HONED;
   uint8_t in_deadband = 1;
-
-  // Grab starting values
-  readChannel(0x2a, 0, &ldc1_ch0_cal);
-  readChannel(0x2a, 1, &ldc1_ch1_cal);
-  readChannel(0x2a, 2, &ldc1_ch2_cal);
-  readChannel(0x2a, 3, &ldc1_ch3_cal);
-  readChannel(0x2b, 0, &ldc2_ch0_cal);
-  readChannel(0x2b, 1, &ldc2_ch1_cal);
-  ldc1_ch0_cal /= COMMON_DIVIDER;
-  ldc1_ch1_cal /= COMMON_DIVIDER;
-  ldc1_ch2_cal /= COMMON_DIVIDER;
-  ldc1_ch3_cal /= COMMON_DIVIDER;
-  ldc2_ch0_cal /= COMMON_DIVIDER;
-  ldc2_ch1_cal /= COMMON_DIVIDER;
 
 // Autozero variables
   uint8_t probably_home = 0;
@@ -275,90 +418,70 @@ int main(void)
       jumpToBootloader();
     }
     // Grab a new set of values
-    readChannel(0x2a, 0, &ldc1_ch0);
-    readChannel(0x2a, 1, &ldc1_ch1);
-    readChannel(0x2a, 2, &ldc1_ch2);
-    readChannel(0x2a, 3, &ldc1_ch3);
-    readChannel(0x2b, 0, &ldc2_ch0);
-    readChannel(0x2b, 1, &ldc2_ch1);
+    
+    total_change = 0;
+    in_deadband = 1;
 
-    ldc1_ch0 /= COMMON_DIVIDER;
-    ldc1_ch1 /= COMMON_DIVIDER;
-    ldc1_ch2 /= COMMON_DIVIDER;
-    ldc1_ch3 /= COMMON_DIVIDER;
-    ldc2_ch0 /= COMMON_DIVIDER;
-    ldc2_ch1 /= COMMON_DIVIDER;
 
-    //For Autozero, compute total change from last samples
-    total_change = abs(ldc1_ch0 + ldc1_ch0_dif - ldc1_ch0_cal) +
-                  abs(ldc1_ch1 + ldc1_ch1_dif - ldc1_ch1_cal) +
-                  abs(ldc1_ch2 + ldc1_ch2_dif - ldc1_ch2_cal) +
-                  abs(ldc1_ch3 + ldc1_ch3_dif - ldc1_ch3_cal) +
-                  abs(ldc2_ch0 + ldc2_ch0_dif - ldc2_ch0_cal) +
-                  abs(ldc2_ch1 + ldc2_ch1_dif - ldc2_ch1_cal);
+    for(i = 0; i< NUM_SENSORS; i++) {
+      //Get the latest reading, divided by the window size and COMON_DENOM
+      readChannel(sensors[i]->LDCAdr, sensors[i]->channel, &tmp);
+      sensors[i]->vals[w_cnt] = tmp / denom;
+      
+      //Calculate the average
+      sensors[i]->val = 0;
+      for (j = 0 ; j < WIN_SIZE; j++){
+        sensors[i]->val += sensors[i]->vals[j];
+      }
+      
+      //Calculate the change(s) from previous sample(s) and sum them up
+      //OBS uses the diff value calculated for the _previous_ sample
+      total_change += abs((int32_t)sensors[i]->val + sensors[i]->diff - (int32_t)sensors[i]->cal);
 
-    // Compare to cal'd values
-    ldc1_ch0_dif = ((int32_t)ldc1_ch0_cal - (int32_t)ldc1_ch0);
-    ldc1_ch1_dif = ((int32_t)ldc1_ch1_cal - (int32_t)ldc1_ch1);
-    ldc1_ch2_dif = ((int32_t)ldc1_ch2_cal - (int32_t)ldc1_ch2);
-    ldc1_ch3_dif = ((int32_t)ldc1_ch3_cal - (int32_t)ldc1_ch3);
-    ldc2_ch0_dif = ((int32_t)ldc2_ch0_cal - (int32_t)ldc2_ch0);
-    ldc2_ch1_dif = ((int32_t)ldc2_ch1_cal - (int32_t)ldc2_ch1);
+      //calculate the new diff value
+      sensors[i]->diff = ((int32_t)(sensors[i]->cal) - (int32_t)(sensors[i]->val));
 
-   //For Autozero, judge whether the knob has been left in home position
+      if(abs(sensors[i]->diff) > LDC_HONE_DEADBAND){
+        in_deadband = 0;
+      }
+    }
+
+    w_cnt = (w_cnt + 1) % WIN_SIZE;
+
+
+   //For Autozero, judge whether the knob is still
     probably_home = total_change < AUTOZERO_MAX_TOTAL_CHANGE;
 
     // Perform honing (if necessary)
     switch (ldc_honing_state){
       case HONED:
-        if(
-          abs(ldc1_ch0_dif) > LDC_HONE_DEADBAND ||
-          abs(ldc1_ch1_dif) > LDC_HONE_DEADBAND ||
-          abs(ldc1_ch2_dif) > LDC_HONE_DEADBAND ||
-          abs(ldc1_ch3_dif) > LDC_HONE_DEADBAND ||
-          abs(ldc2_ch0_dif) > LDC_HONE_DEADBAND ||
-          abs(ldc2_ch1_dif) > LDC_HONE_DEADBAND ||
-          !probably_home
-        ){
+        if( !in_deadband || !probably_home)
+        {
           ldc_honing_state = ACTIVE;
         }
         break;
       case ACTIVE:
-        if(
-            abs(ldc1_ch0_dif) < LDC_HONE_DEADBAND &&
-            abs(ldc1_ch1_dif) < LDC_HONE_DEADBAND &&
-            abs(ldc1_ch2_dif) < LDC_HONE_DEADBAND &&
-            abs(ldc1_ch3_dif) < LDC_HONE_DEADBAND &&
-            abs(ldc2_ch0_dif) < LDC_HONE_DEADBAND &&
-            abs(ldc2_ch1_dif) < LDC_HONE_DEADBAND  
-        ){
+        if( in_deadband )
+        {
           ldc_honing_count++;
-          in_deadband = 1;
-        } else if(probably_home) {
+        } 
+        else if( probably_home )
+        {
           ldc_honing_count++;
-          in_deadband = 0;
-        }else{
+        } 
+        else 
+        {
           ldc_honing_count = 0;
-          in_deadband = 0;
         }
-        if(ldc_honing_count > LDC_HONE_PERIOD){
-          ldc1_ch0_cal = ldc1_ch0;
-          ldc1_ch1_cal = ldc1_ch1;
-          ldc1_ch2_cal = ldc1_ch2;
-          ldc1_ch3_cal = ldc1_ch3;
-          ldc2_ch0_cal = ldc2_ch0;
-          ldc2_ch1_cal = ldc2_ch1;
+        if(ldc_honing_count > LDC_HONE_PERIOD)
+        {
+          for(i = 0; i< NUM_SENSORS; i++) {
+            sensors[i]->cal = sensors[i]->val;
+            sensors[i]->diff = 0;
+          }
 
           ldc_honing_count = 0;
           ldc_honing_state = HONED;
-
-          //For Autozero, set the diffs to zero to be correct next loop
-          ldc1_ch0_dif = 0;
-          ldc1_ch1_dif = 0;
-          ldc1_ch2_dif = 0;
-          ldc1_ch3_dif = 0;
-          ldc2_ch0_dif = 0;
-          ldc2_ch1_dif = 0;
         }
       default:
         break;
@@ -366,12 +489,12 @@ int main(void)
 
 
     // Get sums and differences
-    int32_t cm1 = ldc1_ch0_dif+ldc1_ch1_dif;
-    int32_t dm1 = ldc1_ch0_dif-ldc1_ch1_dif;
-    int32_t cm2 = ldc1_ch2_dif+ldc1_ch3_dif;
-    int32_t dm2 = ldc1_ch2_dif-ldc1_ch3_dif;
-    int32_t cm3 = ldc2_ch0_dif+ldc2_ch1_dif;
-    int32_t dm3 = ldc2_ch0_dif-ldc2_ch1_dif;
+    int32_t cm1 = sensors[LDC1CH0_id]->diff + sensors[LDC1CH1_id]->diff;
+    int32_t dm1 = sensors[LDC1CH0_id]->diff - sensors[LDC1CH1_id]->diff;
+    int32_t cm2 = sensors[LDC1CH2_id]->diff + sensors[LDC1CH3_id]->diff;
+    int32_t dm2 = sensors[LDC1CH2_id]->diff - sensors[LDC1CH3_id]->diff;
+    int32_t cm3 = sensors[LDC2CH0_id]->diff + sensors[LDC2CH1_id]->diff;
+    int32_t dm3 = sensors[LDC2CH0_id]->diff - sensors[LDC2CH1_id]->diff;
 
     // Compute tranformation
     int32_t z = cm1 + cm2 + cm3;
@@ -396,12 +519,11 @@ int main(void)
     rx = RX_SCALE_FACTOR * rx;
     ry = RY_SCALE_FACTOR * ry;
     rz = RZ_SCALE_FACTOR * rz;
-    // Delay a bit for the LDCs to get new readings 
-    // (in the future, add INTB pin support so the LDCs can alert the MCU when they have new data ready)
-    HAL_Delay(20);
-
+  
     // Send the data.
     sendGamepadReport(boundToInt16(x),boundToInt16(y),boundToInt16(z),boundToInt16(rx),boundToInt16(ry),boundToInt16(rz));
+    sendGamepadReportTpButtons();
+
 
     // Debug send for if you want the raw coil data
     // sendGamepadReport(
@@ -413,10 +535,16 @@ int main(void)
     //   ldc2_ch1_dif
     // );
 
-    /* USER CODE END WHILE */
+      // Delay a bit for the LDCs to get new readings 
+      // (in the future, add INTB pin support so the LDCs can alert the MCU when they have new data ready)
+      HAL_Delay(20);
 
-    /* USER CODE BEGIN 3 */
+
+    /* USER CODE END WHILE */
   }
+
+  /* USER CODE BEGIN 3 */
+  
   /* USER CODE END 3 */
 }
 

@@ -66,6 +66,26 @@ void MX_GPIO_Init(void)
 
 }
 
+//GPIO_PIN_4 = TP1
+//GPIO_PIN_5 = TP2
+//GPIO_PIN_6 = TP3
+//GPIO_PIN_7 = TP4
+void MX_GPIO_Init_Tp_Button(uint16_t GPIO_A_ButtonId)
+{
+
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* GPIO Ports Clock Enable */
+  // Assume this is already done above
+  //__HAL_RCC_GPIOA_CLK_ENABLE();
+
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pin = GPIO_A_ButtonId;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+}
+
 /* USER CODE BEGIN 2 */
 
 /* USER CODE END 2 */
