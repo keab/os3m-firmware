@@ -107,11 +107,44 @@ typedef enum {
 //Comment out the lines you don't use (i.e. if no button is connected or you use the TP for something else)
 //Note that buttons can also be assigned other functions in the PC driver
 //All buttons are active low, i.e. the switch shall be between TP and GND.
-#define TP1_BIT BUTTON_VIEW_FIT_BIT
-#define TP2_BIT BUTTON_VIEW_FRONT_BIT
-#define TP3_BIT BUTTON_ROT_TOGGLE_BIT
-#define TP4_BIT BUTTON_CTRL_BIT
+#define TP1_BUTTON_BIT BUTTON_VIEW_FIT_BIT
+#define TP2_BUTTON_BIT BUTTON_VIEW_FRONT_BIT
+#define TP3_BUTTON_BIT BUTTON_ROT_TOGGLE_BIT
+#define TP4_BUTTON_BIT BUTTON_CTRL_BIT
 
+
+
+#define HI1BYTE(x)  ((uint8_t)(((x) & 0x0000FF00UL) >> 8U))
+#define HI2BYTE(x)  ((uint8_t)(((x) & 0x00FF0000UL) >> 16U))
+#define HI3BYTE(x)  ((uint8_t)(((x) & 0xFF000000UL) >> 24U))
+
+
+//Check the button assignments at compile time
+#define INVALID_BIT(x) (x > 31 || x < 0)
+
+#ifdef TP1_BUTTON_BIT
+  #if INVALID_BIT(TP1_BUTTON_BIT) 
+  #error Invalid value for TP1_BUTTON_BIT
+  #endif
+#endif
+
+#ifdef TP2_BUTTON_BIT
+  #if INVALID_BIT(TP2_BUTTON_BIT) 
+  #error Invalid value for TP2_BUTTON_BIT
+  #endif
+#endif
+
+#ifdef TP3_BUTTON_BIT
+  #if INVALID_BIT(TP3_BUTTON_BIT) 
+  #error Invalid value for TP3_BUTTON_BIT
+  #endif
+#endif
+
+#ifdef TP4_BUTTON_BIT
+  #if INVALID_BIT(TP4_BUTTON_BIT) 
+  #error Invalid value for TP4_BUTTON_BIT
+  #endif
+#endif
 
 /* USER CODE END PD */
 
@@ -138,83 +171,26 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void sendGamepadReport(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz)
+void sendHidReport(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz, uint32_t buttons)
 {
- // int16_t buffer[6] = {x, y, z, rx, ry, rz};
   uint8_t buffer_trans[7] = {0x01, LOBYTE(x), HIBYTE(x), LOBYTE(y), HIBYTE(y), LOBYTE(z), HIBYTE(z)};
   uint8_t buffer_rot[7] = {0x02, LOBYTE(rx), HIBYTE(rx), LOBYTE(ry), HIBYTE(ry), LOBYTE(rz), HIBYTE(rz)};
-
-  //uint8_t buffer_full[14] = {0x01, LOBYTE(x), HIBYTE(x), LOBYTE(y), HIBYTE(y), LOBYTE(z), HIBYTE(z), 0x02, LOBYTE(rx), HIBYTE(rx), LOBYTE(ry), HIBYTE(ry), LOBYTE(rz), HIBYTE(rz)};
+  static uint32_t last_sent_buttons = 0;
 
   USBD_HID_SendReport(&hUsbDeviceFS, &buffer_trans, sizeof(buffer_trans));
   HAL_Delay(2);
   USBD_HID_SendReport(&hUsbDeviceFS, &buffer_rot, sizeof(buffer_rot));
-}
 
 
-/*
-Send a button report.
-
-For some currently unknown reason, if the knob is moved at the same time as a button is pressed, 
-the two highest bytes transmitted (buffer_but[5] and buffer_but[6]) will contain non-zero values.
-No effects of this on the pc side have been noticed so far.
-This was *not* observed when tracing a Spacemouse Pro.
-
-*/
-void sendGamepadReportTpButtons(void)
-{
-  static uint8_t last_sent = 0;
-  uint8_t new_val = 0;
-  uint8_t buffer_but[7] = {0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-  //memset(buffer_but + 1, 0, 6*sizeof(uint8_t));
-
-  #ifdef TP1_BIT
-    const uint8_t TP1_By = 1 + (TP1_BIT / 8);
-    const uint8_t TP1_bi = TP1_BIT % 8;
-    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4) == GPIO_PIN_RESET)
-    {
-      buffer_but[TP1_By] |= 1 << TP1_bi;
-      new_val |= 1;
-    }
-  #endif
-  #ifdef TP2_BIT
-    const uint8_t TP2_By = 1 + (TP2_BIT / 8);
-    const uint8_t TP2_bi = TP2_BIT % 8;
-    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET)
-    {
-      buffer_but[TP2_By] |= 1 << TP2_bi;
-      new_val |= 2;
-    }
-  #endif
-  #ifdef TP3_BIT
-    const uint8_t TP3_By = 1 + (TP3_BIT / 8);
-    const uint8_t TP3_bi = TP3_BIT % 8;
-    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_RESET)
-    {
-      buffer_but[TP3_By] |= 1 << TP3_bi;
-      new_val |= 4;
-    }
-  #endif
-  #ifdef TP4_BIT
-    const uint8_t TP4_By = 1 + (TP4_BIT / 8);
-    const uint8_t TP4_bi = TP4_BIT % 8;
-    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_RESET)
-    {
-      buffer_but[TP4_By] |= 1 << TP4_bi;
-      new_val |= 8;
-    }
-  #endif
-
-
-  if (new_val != last_sent)
+  if ( buttons != last_sent_buttons)
   {
+    uint8_t buffer_but[5] = {0x03, LOBYTE(buttons), HI1BYTE(buttons), HI2BYTE(buttons), HI3BYTE(buttons)};
     HAL_Delay(10); //For some reason this delay is needed to always get the packet sent. 5ms was not enough.
-    
     USBD_HID_SendReport(&hUsbDeviceFS, &buffer_but, sizeof(buffer_but));
-
-    last_sent = new_val;
+    last_sent_buttons = buttons;
   }
 }
+
 
 int16_t boundToInt16(int32_t value) {
     if (value < INT16_MIN) {
@@ -327,16 +303,20 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
 
-  #ifdef TP1_BIT
+
+  #ifdef TP1_BUTTON_BIT
   MX_GPIO_Init_Tp_Button(GPIO_PIN_4);
   #endif
-  #ifdef TP2_BIT
+
+  #ifdef TP2_BUTTON_BIT
   MX_GPIO_Init_Tp_Button(GPIO_PIN_5);
   #endif
-  #ifdef TP3_BIT
+
+  #ifdef TP3_BUTTON_BIT
   MX_GPIO_Init_Tp_Button(GPIO_PIN_6);
   #endif
-  #ifdef TP4_BIT
+
+  #ifdef TP4_BUTTON_BIT
   MX_GPIO_Init_Tp_Button(GPIO_PIN_7);
   #endif
   
@@ -511,28 +491,57 @@ int main(void)
       rz = 0;
       rx = 0;
       ry = 0;
+    } else {
+      x = X_SCALE_FACTOR * x;
+      y = Y_SCALE_FACTOR * y;
+      z = Z_SCALE_FACTOR * z;
+      rx = RX_SCALE_FACTOR * rx;
+      ry = RY_SCALE_FACTOR * ry;
+      rz = RZ_SCALE_FACTOR * rz;
     }
 
-    x = X_SCALE_FACTOR * x;
-    y = Y_SCALE_FACTOR * y;
-    z = Z_SCALE_FACTOR * z;
-    rx = RX_SCALE_FACTOR * rx;
-    ry = RY_SCALE_FACTOR * ry;
-    rz = RZ_SCALE_FACTOR * rz;
+
+
+    uint32_t buttons = 0;
+    
+    #ifdef TP1_BUTTON_BIT
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4) == GPIO_PIN_RESET)
+    {
+      buttons |= 1ul << TP1_BUTTON_BIT;
+    }
+    #endif
+    #ifdef TP2_BUTTON_BIT
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET)
+    {
+      buttons |= 1ul << TP2_BUTTON_BIT;
+    }
+    #endif
+    #ifdef TP3_BUTTON_BIT
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6) == GPIO_PIN_RESET)
+    {
+      buttons |= 1ul << TP3_BUTTON_BIT;
+    }
+    #endif
+    #ifdef TP4_BUTTON_BIT
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_7) == GPIO_PIN_RESET)
+    {
+      buttons |= 1ul << TP4_BUTTON_BIT;
+    }
+    #endif
   
     // Send the data.
-    sendGamepadReport(boundToInt16(x),boundToInt16(y),boundToInt16(z),boundToInt16(rx),boundToInt16(ry),boundToInt16(rz));
-    sendGamepadReportTpButtons();
+    sendHidReport(boundToInt16(x),boundToInt16(y),boundToInt16(z),boundToInt16(rx),boundToInt16(ry),boundToInt16(rz), buttons);
 
 
     // Debug send for if you want the raw coil data
-    // sendGamepadReport(
+    // sendHidReport(
     //   ldc1_ch0_dif,
     //   ldc1_ch1_dif,
     //   ldc1_ch2_dif,
     //   ldc1_ch3_dif,
     //   ldc2_ch0_dif,
-    //   ldc2_ch1_dif
+    //   ldc2_ch1_dif,
+    //   buttons
     // );
 
       // Delay a bit for the LDCs to get new readings 

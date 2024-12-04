@@ -51,9 +51,9 @@ def handler_3dc(data):
             print('Debug: Lost a #1 packet! Should never happen.')
     elif m_id == 3:
         #button-bits   
-        high_bits=[ i for i in range(48) if data[1 + i//8] & (1 << i%8)]
+        high_bits=[ i for i in range(32) if data[1 + i//8] & (1 << i%8)]
         
-        print("Buttons (bit 0 is the rightmost): {5:08b} {4:08b} {3:08b} {2:08b} {1:08b} {0:08b}    High-bits: {6}".format(data[1],data[2],data[3],data[4],data[5],data[6], high_bits))
+        print("Buttons (bit 0 is the rightmost):  {:08b} {:08b} {:08b} {:08b}    High-bits: {}".format(data[4],data[3],data[2],data[1], high_bits))
     else:
         print("Unexpected/unknown message: {0}".format(data))
 
