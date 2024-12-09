@@ -14,5 +14,8 @@ The firmware by Hexacube has here been extended with:
 Also added is a Python tool for viewing the HID reports on the PC side
 
 # Build
-This fork builds and flashes with platformio.
+This fork builds and flashes with platformio, but the first time flash and configure as per the instructions in [HOW_TO_FLASH](./HOW_TO_FLASH.md) . 
+
+Make sure to use a USB2.0 hub between the OS3M and your PC, otherwise the up/download may fail, leaving the memory corrupt and the board non-bootable. If it happens you must lift pin 1 of the STM32, program it and then re-solder pin 1.
+
 With a working install of platformio, `pio run -t upload` should build and upload the firmware assuming the OS3M mouse is in DFU
